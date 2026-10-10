@@ -1,0 +1,11 @@
+[package]
+name = "moonlink-lib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+alloy-sol-types = { workspace = true }
+sha2 = "0.10"
+blake3 = { version = "1", default-features = false, features = ["pure"] }
+num-bigint = "0.4"
+tiny-keccak = { version = "2", features = ["keccak"] }

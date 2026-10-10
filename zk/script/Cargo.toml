@@ -1,0 +1,18 @@
+[package]
+version = "0.1.0"
+name = "moonlink-script"
+edition = "2021"
+
+[[bin]]
+name = "moonlink"
+path = "src/bin/main.rs"
+
+[dependencies]
+sp1-sdk = { version = "6.0.1", features = ["blocking", "native-gnark"] }
+alloy-sol-types = { workspace = true }
+moonlink-lib = { path = "../lib" }
+hex = "0.4.3"
+serde_json = "1.0"
+
+[build-dependencies]
+sp1-build = { version = "6.0.1" }

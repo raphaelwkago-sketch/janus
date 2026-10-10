@@ -1,6 +1,8 @@
-# Moonlink
+# Janus
 
 Trustless SOL ⇄ ETH bridge. No multisig, no guardians, no admin keys: each chain verifies the other chain's own validators, and SP1 zero-knowledge proofs show what happened inside a block.
+
+(Working code name was **Moonlink**: contract and file names still use it, and the deployed Sepolia contract is named `Moonlink`.)
 
 ## Layout
 
@@ -16,7 +18,7 @@ Trustless SOL ⇄ ETH bridge. No multisig, no guardians, no admin keys: each cha
 
 ## Status (2026-10-10)
 
-- Full round trip on real chains: local 4-validator Alpenglow cluster ⇄ Ethereum Sepolia (Moonlink at `0xe26716bf90769de2758097a6f4b1f58f75b7574c`).
+- Full round trip on real chains: local 4-validator Alpenglow cluster ⇄ Ethereum Sepolia (contract at `0xe26716bf90769de2758097a6f4b1f58f75b7574c`).
 - Mainnet-size block (3,013 accounts, 36 MB) proven Ethereum-ready in 5.8 min on one RTX 4090.
 - Before real money: remove Solana program upgrade authority, audit, choose a relayer data feed.
 

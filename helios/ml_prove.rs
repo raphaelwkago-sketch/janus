@@ -37,7 +37,10 @@ async fn main() -> Result<()> {
     let out = &a[2];
     let execute_only = a.get(3).map(|s| s == "execute").unwrap_or(false);
     let mut inputs: ProofInputs = serde_cbor::from_slice(&cbor)?;
+    #[cfg(not(feature = "mlcpu"))]
     let client = ProverClient::builder().cuda().build().await;
+    #[cfg(feature = "mlcpu")]   // no GPU: same proofs on CPU (slower)
+    let client = ProverClient::builder().cpu().build().await;
 
     // light-client proof without storage slots (keeps the Solana transaction under 1232 bytes);
     // the slots are proven separately by the storage program against the same state root

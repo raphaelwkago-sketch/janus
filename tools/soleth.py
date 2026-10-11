@@ -1,9 +1,9 @@
-# Drive Moonlink's ETH -> SOL side on the local cluster with real SP1 Helios proofs.
+# Drive Moonlink's ETH -> SOL side with real SP1 Helios proofs (local cluster by default; env RPC, PROGRAM, PAYER for testnet).
 #   soleth.py init   <lc.json> <eth_contract>      (upgrade authority = faucet.json)
 #   soleth.py update <lc.json>
 #   soleth.py unlock <st.json> <head> <amount> <nonce> <recipient_pubkey>
 #   soleth.py tamper-unlock <st.json> <head> <amount> <nonce> <recipient_pubkey>   (amount+1: must fail)
-import json, sys, time, base64, struct, urllib.request
+import json, os, sys, time, base64, struct, urllib.request
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 from solders.instruction import Instruction, AccountMeta
@@ -11,19 +11,19 @@ from solders.message import Message
 from solders.transaction import Transaction
 from solders.hash import Hash
 
-RPC = "http://127.0.0.1:8899"
+RPC = os.environ.get("RPC", "http://127.0.0.1:8899")
 def rpc(m, p=None):
     r = urllib.request.Request(RPC, json.dumps({"jsonrpc": "2.0", "id": 1, "method": m, "params": p or []}).encode(), {"Content-Type": "application/json"})
     j = json.load(urllib.request.urlopen(r, timeout=30))
     if "error" in j: raise Exception(j["error"])
     return j["result"]
 load = lambda p: Keypair.from_bytes(bytes(json.load(open(p))))
-PID = Pubkey.from_string("FUj7xs87KbwFQxnW5PHhNw17X37QxZMdr5NHT1SHgyWt")
+PID = Pubkey.from_string(os.environ.get("PROGRAM", "FUj7xs87KbwFQxnW5PHhNw17X37QxZMdr5NHT1SHgyWt"))
 LOADER = Pubkey.from_string("BPFLoaderUpgradeab1e11111111111111111111111")
 SYS = Pubkey.from_string("11111111111111111111111111111111")
 CB = Pubkey.from_string("ComputeBudget111111111111111111111111111111")
 SPP = 8192  # Ethereum slots per sync-committee period
-payer = load("/root/mc2/faucet.json")
+payer = load(os.environ.get("PAYER", "/root/mc2/faucet.json"))
 pda = lambda *s: Pubkey.find_program_address(list(s), PID)[0]
 le = lambda x: struct.pack("<Q", x)
 hx = lambda s: bytes.fromhex(s[2:] if s.startswith("0x") else s)
@@ -33,8 +33,9 @@ u = lambda w: int.from_bytes(w, "big")
 def send(data, metas):
     cu = Instruction(CB, bytes([2]) + struct.pack("<I", 1_400_000), [])
     ix = Instruction(PID, data, metas)
+    pr = Instruction(CB, bytes([3]) + struct.pack("<Q", 20000), [])   # priority fee (public clusters)
     bh = Hash.from_string(rpc("getLatestBlockhash")["value"]["blockhash"])
-    tx = Transaction([payer], Message([cu, ix], payer.pubkey()), bh)
+    tx = Transaction([payer], Message([cu, pr, ix], payer.pubkey()), bh)
     raw = bytes(tx); print(f"  tx {len(raw)} bytes")
     sim = rpc("simulateTransaction", [base64.b64encode(raw).decode(), {"encoding": "base64", "sigVerify": False}])["value"]
     print("  simulate: err", sim["err"], "| CU", sim.get("unitsConsumed"))

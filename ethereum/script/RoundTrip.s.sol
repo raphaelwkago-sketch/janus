@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {Script, console} from "forge-std/Script.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {Moonlink, ISP1Verifier} from "../src/Moonlink.sol";
-import {MoonlinkLightClient} from "../src/MoonlinkLightClient.sol";
+import {MoonlinkLightClient, setHashOf, totalStakeOf} from "../src/MoonlinkLightClient.sol";
 import {SP1Verifier} from "../src/sp1/v6.1.0/SP1VerifierGroth16.sol";
 
 /// Real round trip on a live Ethereum network (Sepolia):
@@ -31,7 +31,7 @@ contract RoundTrip is Script {
 
         vm.startBroadcast();
         SP1Verifier v = new SP1Verifier();
-        Moonlink ml = new Moonlink(uint16(j.readUint(".sv")), 200, slot / 200, pks, stakes,
+        Moonlink ml = new Moonlink(uint16(j.readUint(".sv")), 200, false, slot / 200, setHashOf(pks, stakes), totalStakeOf(stakes),
             ISP1Verifier(address(v)), g.readBytes32(".vkey"), DEPOSIT_PROGRAM, bytes32(uint256(2)));
         ml.submitCertificate(slot, j.readBytes32(".blockId"), pks, stakes, aggs);
         ml.claim(g.readBytes(".publicValues"), g.readBytes(".proof"));

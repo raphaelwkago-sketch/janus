@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {Test, console} from "forge-std/Test.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {Moonlink, ISP1Verifier} from "../src/Moonlink.sol";
-import {MoonlinkLightClient} from "../src/MoonlinkLightClient.sol";
+import {MoonlinkLightClient, setHashOf, totalStakeOf} from "../src/MoonlinkLightClient.sol";
 import {SP1Verifier} from "../src/sp1/v6.1.0/SP1VerifierGroth16.sol";
 
 /// Validator-set handoff with real data: Ethereum trusts epoch E-1's set, then learns epoch E's set from
@@ -37,7 +37,7 @@ contract SetHandoffTest is Test {
     }
 
     function _deploy(bytes memory pks, uint256[] memory stakes) internal returns (Moonlink) {
-        return new Moonlink(uint16(j.readUint(".sv")), 200, uint64(j.readUint(".epochOld")), pks, stakes,
+        return new Moonlink(uint16(j.readUint(".sv")), 200, false, uint64(j.readUint(".epochOld")), setHashOf(pks, stakes), totalStakeOf(stakes),
             ISP1Verifier(address(new SP1Verifier())), j.readBytes32(".vkey"), DEPOSIT_PROGRAM, recorder);
     }
 

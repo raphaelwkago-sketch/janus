@@ -47,9 +47,9 @@ contract Moonlink is MoonlinkLightClient {
     error BadBurn();
 
     constructor(
-        uint16 shredVersion_, uint64 slotsPerEpoch_, uint64 epoch, bytes memory pks, uint256[] memory stakes,
+        uint16 shredVersion_, uint64 slotsPerEpoch_, bool warmup_, uint64 epoch, bytes32 setHash, uint256 totalStake,
         ISP1Verifier verifier_, bytes32 programVKey_, bytes32 depositProgram_, bytes32 recorderProgram_
-    ) MoonlinkLightClient(shredVersion_, slotsPerEpoch_, epoch, pks, stakes) {
+    ) MoonlinkLightClient(shredVersion_, slotsPerEpoch_, warmup_, epoch, setHash, totalStake) {
         verifier = verifier_;
         programVKey = programVKey_;
         depositProgram = depositProgram_;
@@ -101,7 +101,7 @@ contract Moonlink is MoonlinkLightClient {
         verifier.verifyProof(programVKey, setPublicValues, proof);
         SetValues memory s = abi.decode(setPublicValues, (SetValues));
         if (s.program != recorderProgram) revert WrongProgram();
-        if (s.slot / slotsPerEpoch != s.epoch || sets[s.epoch].hash != bytes32(0)) revert BadEpoch();
+        if (epochOf(s.slot) != s.epoch || sets[s.epoch].hash != bytes32(0)) revert BadEpoch();
         ValidatorSet memory old = sets[s.epoch - 1];
         if (old.hash == bytes32(0)) revert UnknownEpoch(s.epoch - 1);
         if (keccak256(abi.encode(h.pksOld, h.stakesOld)) != old.hash) revert WrongSet();

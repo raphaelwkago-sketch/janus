@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 import {Script, console} from "forge-std/Script.sol";
 import {stdJson} from "forge-std/StdJson.sol";
-import {MoonlinkLightClient} from "../src/MoonlinkLightClient.sol";
+import {MoonlinkLightClient, setHashOf, totalStakeOf} from "../src/MoonlinkLightClient.sol";
 
 /// Deploy + submit a certificate as real transactions on anvil (receipts give true gas incl. calldata).
 contract Measure is Script {
@@ -19,7 +19,7 @@ contract Measure is Script {
         }
         uint64 slot = uint64(j.readUint(".slot"));
         vm.startBroadcast();
-        MoonlinkLightClient lc = new MoonlinkLightClient(uint16(j.readUint(".sv")), uint64(j.readUint(".spe")), uint64(j.readUint(".epoch")), pks, stakes);
+        MoonlinkLightClient lc = new MoonlinkLightClient(uint16(j.readUint(".sv")), uint64(j.readUint(".spe")), false, uint64(j.readUint(".epoch")), setHashOf(pks, stakes), totalStakeOf(stakes));
         lc.submitCertificate(slot, j.readBytes32(".blockId"), pks, stakes, aggs);
         vm.stopBroadcast();
         console.log("finalized", lc.finalizedBlock(slot) == j.readBytes32(".blockId"));

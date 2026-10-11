@@ -2,7 +2,7 @@
 # Chain: BLS finalization cert -> block_id -> shred Merkle proofs -> block footer -> bank hash
 #        -> LtHash block-delta -> Moonlink receipt account (eth recipient, amount, nonce).
 # Also writes the proof package that the Ethereum contract consumes (/root/mc2/proof_<slot>.json).
-import json, struct, hashlib, base64, sys
+import json, os, struct, hashlib, base64, sys
 import numpy as np, base58
 from blake3 import blake3
 from py_ecc.bls import G2ProofOfPossession as bls
@@ -10,7 +10,11 @@ from py_ecc.bls.g2_primitives import pubkey_to_G1, signature_to_G2
 from py_ecc.bls.hash_to_curve import hash_to_G2
 from py_ecc.optimized_bls12_381 import normalize
 
-M = "/root/mc2"; SV = 18915; SPE = 200; LAG = 1
+# env (defaults = local 4-validator cluster): ML_DIR, ML_SV (shred version), ML_SPE (slots per epoch),
+# ML_RANK=recorder -> rank map from the recorder's on-chain set (sets.jsonl) for the slot's own epoch (testnet).
+M = os.environ.get("ML_DIR", "/root/mc2"); SV = int(os.environ.get("ML_SV", 18915)); SPE = int(os.environ.get("ML_SPE", 200)); LAG = 1
+RANK_FROM_RECORDER = os.environ.get("ML_RANK") == "recorder"
+RANK_FROZEN = os.environ.get("ML_RANK") == "frozen"   # replay's frozen epoch-stakes rank map + recorder BLS keys (testnet)
 SETMODE = len(sys.argv) > 1 and sys.argv[1] == "--set"
 if SETMODE:             # prove2.py --set <slot> <recorder program id>: export the block where a validator-set record completed
     GOOD = int(sys.argv[2]); PROGRAM = sys.argv[3]; BAD = None; RECEIPT = "11111111111111111111111111111111"; dep = {"vault": None}
@@ -36,26 +40,35 @@ def bank_hash(parent, sigs, lbh, lt):
     return sha(sha(parent + sigs.to_bytes(8, "little") + lbh) + lt.astype("<u2").tobytes())
 EMPTY = {"lamports": 0, "data": b"", "owner": "11111111111111111111111111111111", "executable": False}
 
-state = {}
-for e in json.load(open(f"{M}/accounts0.json"))["accounts"]:
-    a = e["account"]; state[e["pubkey"]] = {"lamports": a["lamports"], "data": base64.b64decode(a["data"][0]), "owner": a["owner"], "executable": a["executable"]}
-lt = ID.copy()
-for pk, a in state.items(): lt = add(lt, acct_lt(pk, a))
 slots = sorted(json.load(open(f"{M}/slots.json"))["bank_hash_details"], key=lambda x: x["slot"])
-LT, CH, META = {}, {}, {}; prev_slot = 0; LT[0] = lt; mbh = 0
-for b in slots:
-    s = b["slot"]; ch = []
-    for a in b["accounts"]:
-        new = {"lamports": a["lamports"], "data": base64.b64decode(a["data"]), "owner": a["owner"], "executable": a["executable"]}
-        old = state.get(a["pubkey"], EMPTY); ch.append((a["pubkey"], old, new))
-        lt = add(sub(lt, acct_lt(a["pubkey"], old)), acct_lt(a["pubkey"], new)); state[a["pubkey"]] = new
-    LT[s], CH[s], META[s] = lt, ch, b
-    mbh += bank_hash(base58.b58decode(b["parent_bank_hash"]), b["signature_count"], base58.b58decode(b["last_blockhash"]), lt) == base58.b58decode(b["bank_hash"])
-print(f"T1  LtHash replay of {len(slots)} real slots (4-validator cluster)")
+def acc(a): return {"lamports": a["lamports"], "data": base64.b64decode(a["data"]), "owner": a["owner"], "executable": a["executable"]}
+LT, CH, META = {}, {}, {}; mbh = 0
+if os.path.exists(f"{M}/accounts0.json"):   # local cluster: replay every account from genesis
+    state = {}
+    for e in json.load(open(f"{M}/accounts0.json"))["accounts"]:
+        a = e["account"]; state[e["pubkey"]] = {"lamports": a["lamports"], "data": base64.b64decode(a["data"][0]), "owner": a["owner"], "executable": a["executable"]}
+    lt = ID.copy()
+    for pk, a in state.items(): lt = add(lt, acct_lt(pk, a))
+    LT[0] = lt
+    for b in slots:
+        s_ = b["slot"]; ch = []
+        for a in b["accounts"]:
+            new = acc(a); old = state.get(a["pubkey"], EMPTY); ch.append((a["pubkey"], old, new))
+            lt = add(sub(lt, acct_lt(a["pubkey"], old)), acct_lt(a["pubkey"], new)); state[a["pubkey"]] = new
+        LT[s_], CH[s_], META[s_] = lt, ch, b
+        mbh += bank_hash(base58.b58decode(b["parent_bank_hash"]), b["signature_count"], base58.b58decode(b["last_blockhash"]), lt) == base58.b58decode(b["bank_hash"])
+    print(f"T1  LtHash replay of {len(slots)} real slots from genesis")
+else:   # public cluster replayed from a snapshot: Agave (patched ledger-tool) records each bank's full lattice hash + old values
+    lth = lambda h: np.frombuffer(bytes.fromhex(h), dtype="<u2").astype(np.uint16)
+    for b in slots:
+        s_ = b["slot"]; LT[s_], META[s_] = lth(b["accounts_lt_hash"]), b
+        olds = {a["pubkey"]: acc(a) for a in b["old_accounts"]}
+        CH[s_] = [(a["pubkey"], olds[a["pubkey"]] if olds[a["pubkey"]]["lamports"] else EMPTY, acc(a)) for a in b["accounts"]]
+        mbh += bank_hash(base58.b58decode(b["parent_bank_hash"]), b["signature_count"], base58.b58decode(b["last_blockhash"]), LT[s_]) == base58.b58decode(b["bank_hash"])
+    print(f"T1  {len(slots)} real slots replayed by Agave from a snapshot (full lattice hashes recorded)")
 ok(f"recomputed bank hash == Agave's in {mbh}/{len(slots)} slots", mbh == len(slots))
-parent_of = {}
-for i, b in enumerate(slots):
-    if i: parent_of[b["slot"]] = slots[i - 1]["slot"]
+by_hash = {b["bank_hash"]: b["slot"] for b in slots}
+parent_of = {b["slot"]: by_hash[b["parent_bank_hash"]] for b in slots if b["parent_bank_hash"] in by_hash}
 
 # ---------------- shreds -> FEC roots -> block_id (double Merkle root) ----------------
 LEAF = b"\x00SOLANA_MERKLE_SHREDS_LEAF"; NODE = b"\x01SOLANA_MERKLE_SHREDS_NODE"
@@ -105,7 +118,7 @@ def block_parts(slot):
     levels = tree([roots[f] for f in fecs] + [pinfo])
     return j, shreds, fecs, roots, roots_agave, pinfo, levels
 
-import sys as _s; _s.path.insert(0, "/mnt/c/Users/rapha/AppData/Local/Temp/claude/C--Users-rapha--claude/da43f16f-c5f7-43ef-8669-5c9de77829d4/scratchpad")
+import sys as _s; _s.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from parse_block import components
 FOOTER_VARIANT = 0
 def block_check(slot, shreds):
@@ -150,15 +163,24 @@ fp = dict(j=j, shreds=shreds, bc=bc)
 
 # ---------------- certificate ----------------
 sets = {}
-for l in open(f"{M}/epochs.jsonl"):
-    s = json.loads(l); sets[s["epoch"]] = s["set"]
-def rank_map(epoch):
-    e = max(0, epoch - LAG)
-    if e not in sets:   # cluster was offline during that epoch: use the closest recorded one (stakes unchanged here)
-        e = max([k for k in sets if k <= e] or [min(sets)]); print(f"      (rank map: epoch {epoch - LAG} not recorded, using epoch {e})")
-    rows = [r for r in sets[e] if r["stake"] > 0 and r["bls"]]
-    rows.sort(key=lambda r: (-r["stake"], bytes.fromhex(r["bls"])))
-    return [(bytes.fromhex(r["bls"]), r["stake"]) for r in rows]
+if RANK_FROZEN:
+    from frozen_set import frozen_rank
+    def rank_map(epoch): return frozen_rank(f"{M}/slots.json", f"{M}/sets.jsonl", GOOD)
+elif RANK_FROM_RECORDER:
+    from set_commit import rank_of
+    for l in open(f"{M}/sets.jsonl"):
+        r = json.loads(l); sets[r["epoch"]] = r["data"]
+    def rank_map(epoch): return rank_of(bytes.fromhex(sets[epoch]))
+else:
+    for l in open(f"{M}/epochs.jsonl"):
+        s_ = json.loads(l); sets[s_["epoch"]] = s_["set"]
+    def rank_map(epoch):
+        e = max(0, epoch - LAG)
+        if e not in sets:   # cluster was offline during that epoch: use the closest recorded one (stakes unchanged here)
+            e = max([k for k in sets if k <= e] or [min(sets)]); print(f"      (rank map: epoch {epoch - LAG} not recorded, using epoch {e})")
+        rows = [r for r in sets[e] if r["stake"] > 0 and r["bls"]]
+        rows.sort(key=lambda r: (-r["stake"], bytes.fromhex(r["bls"])))
+        return [(bytes.fromhex(r["bls"]), r["stake"]) for r in rows]
 def p_notar(slot, bid): return bytes([1]) + struct.pack("<Q", slot) + bid + struct.pack("<H", SV)
 def p_final(slot): return bytes([2]) + struct.pack("<Q", slot) + struct.pack("<H", SV)
 def parse_agg(h):

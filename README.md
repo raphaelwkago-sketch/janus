@@ -19,6 +19,10 @@ Trustless SOL ⇄ ETH bridge. No multisig, no guardians, no admin keys: each cha
 ## Status (2026-10-10)
 
 - Full round trip on real chains: local 4-validator Alpenglow cluster ⇄ Ethereum Sepolia (contract at `0xe26716bf90769de2758097a6f4b1f58f75b7574c`).
+- Full round trip on PUBLIC testnets: Solana testnet (Alpenglow, 466 validators) ⇄ Ethereum Sepolia (`fixtures/testnet/`).
+  - SOL→ETH: 1 SOL deposit in testnet slot 450906700, finalized by a fast certificate (322/466 signers, 80.3% stake). Sepolia Moonlink `0x5ad9be60031c564ce135f3e5596e357bea47e106`: cert `0xc321ef2f…819a`, claim `0x1730b182…b1`, burn `0x8ec4c018…8473`.
+  - ETH→SOL: Solana testnet program `Ftazryb4STB7rV4xHsYE5E52VZrYtkfPFw2ZXEAfcuJv`: init `61Fc2VV1…iPaS`, light-client update `63S66wuC…pbtr`, unlock `t44cWtSK…H3zW` (vault 1 → 0 SOL, recipient +1 SOL).
+  - Known limitation: the initial validator set is a trusted constructor input, and the recorder program's stakes differ from Alpenglow's frozen epoch stakes (404/466 validators), so epoch handoff on testnet is not yet sound. Testnet uses an epoch-warmup schedule (`warmup=true`).
 - Mainnet-size block (3,013 accounts, 36 MB) proven Ethereum-ready in 5.8 min on one RTX 4090.
 - Before real money: remove Solana program upgrade authority, audit, choose a relayer data feed.
 

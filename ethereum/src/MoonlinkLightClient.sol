@@ -3,6 +3,15 @@ pragma solidity ^0.8.28;
 
 import {AlpenglowBLS} from "./AlpenglowBLS.sol";
 
+/// Commitment to a validator set (what sets[] stores): keccak256(abi.encode(pks, stakes)) and the total stake.
+function setHashOf(bytes memory pks, uint256[] memory stakes) pure returns (bytes32) {
+    return keccak256(abi.encode(pks, stakes));
+}
+
+function totalStakeOf(uint256[] memory stakes) pure returns (uint256 total) {
+    for (uint256 i = 0; i < stakes.length; i++) total += stakes[i];
+}
+
 /// Ethereum-side light client for Solana Alpenglow: accepts a block as final only with a valid
 /// BLS finalization certificate from the epoch's validator set (no committee, no multisig).
 contract MoonlinkLightClient {
@@ -17,6 +26,8 @@ contract MoonlinkLightClient {
 
     uint16 public immutable shredVersion;
     uint64 public immutable slotsPerEpoch;
+    uint64 public immutable firstNormalEpoch;  // Solana epoch schedule warmup (0 / 0 when the cluster has none)
+    uint64 public immutable firstNormalSlot;
     mapping(uint64 => ValidatorSet) public sets;       // epoch -> set used to verify that epoch's certs
     mapping(uint64 => bytes32) public finalizedBlock;  // slot -> block_id
 
@@ -27,12 +38,26 @@ contract MoonlinkLightClient {
     error BelowThreshold(uint256 signed, uint256 total);
     error BadSignature();
 
-    constructor(uint16 shredVersion_, uint64 slotsPerEpoch_, uint64 epoch, bytes memory pks, uint256[] memory stakes) {
+    /// Trusted starting point: the first epoch's set commitment (see setHashOf, totalStakeOf). Passing the hash, not the
+    /// key list, keeps deployment small for large sets (testnet: 471 validators = 60 KB of keys).
+    /// warmup_: the cluster's epoch schedule starts with short epochs (testnet, mainnet), as in Agave's EpochSchedule.
+    constructor(uint16 shredVersion_, uint64 slotsPerEpoch_, bool warmup_, uint64 epoch, bytes32 setHash, uint256 totalStake) {
         shredVersion = shredVersion_;
         slotsPerEpoch = slotsPerEpoch_;
-        uint256 total;
-        for (uint256 i = 0; i < stakes.length; i++) total += stakes[i];
-        sets[epoch] = ValidatorSet(keccak256(abi.encode(pks, stakes)), total);
+        if (warmup_) {
+            uint64 p = 32; uint64 e = 0;                 // MINIMUM_SLOTS_PER_EPOCH = 32
+            while (p < slotsPerEpoch_) { p <<= 1; e++; }  // e = log2(next_power_of_two(spe)) - log2(32)
+            firstNormalEpoch = e;
+            firstNormalSlot = (p - 32);                  // 32 * (2^e - 1)
+        }
+        sets[epoch] = ValidatorSet(setHash, totalStake);
+    }
+
+    error WarmupSlot(uint64 slot);
+
+    function epochOf(uint64 slot) public view returns (uint64) {
+        if (slot < firstNormalSlot) revert WarmupSlot(slot);
+        return firstNormalEpoch + (slot - firstNormalSlot) / slotsPerEpoch;
     }
 
     function _le64(uint64 x) internal pure returns (bytes8 r) {
@@ -76,7 +101,7 @@ contract MoonlinkLightClient {
         uint256[] calldata stakes,
         Agg[] calldata aggs
     ) external {
-        uint64 epoch = slot / slotsPerEpoch;
+        uint64 epoch = epochOf(slot);
         ValidatorSet memory vs = sets[epoch];
         if (vs.hash == bytes32(0)) revert UnknownEpoch(epoch);
         bool fast = _verifyCert(slot, blockId, vs, pks, stakes, aggs);

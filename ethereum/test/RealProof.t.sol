@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {Test, console} from "forge-std/Test.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {Moonlink, ISP1Verifier} from "../src/Moonlink.sol";
-import {MoonlinkLightClient} from "../src/MoonlinkLightClient.sol";
+import {MoonlinkLightClient, setHashOf, totalStakeOf} from "../src/MoonlinkLightClient.sol";
 import {SP1Verifier} from "../src/sp1/v6.1.0/SP1VerifierGroth16.sol";
 
 /// End to end with no mocks: real Alpenglow certificate + real SP1 Groth16 proof of the slot-1076 deposit,
@@ -38,7 +38,7 @@ contract RealProofTest is Test {
         publicValues = g.readBytes(".publicValues");
         proof = g.readBytes(".proof");
         ISP1Verifier v = ISP1Verifier(address(new SP1Verifier()));
-        ml = new Moonlink(uint16(j.readUint(".sv")), 200, slot / 200, pks, stakes, v, vkey, DEPOSIT_PROGRAM, bytes32(uint256(2)));
+        ml = new Moonlink(uint16(j.readUint(".sv")), 200, false, slot / 200, setHashOf(pks, stakes), totalStakeOf(stakes), v, vkey, DEPOSIT_PROGRAM, bytes32(uint256(2)));
     }
 
     function test_realProof_endToEnd() public {

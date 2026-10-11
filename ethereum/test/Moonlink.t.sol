@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {Test, console} from "forge-std/Test.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {Moonlink, ISP1Verifier} from "../src/Moonlink.sol";
-import {MoonlinkLightClient} from "../src/MoonlinkLightClient.sol";
+import {MoonlinkLightClient, setHashOf, totalStakeOf} from "../src/MoonlinkLightClient.sol";
 
 /// Accepts any proof: isolates the bridge logic. The real SP1 Groth16 verifier is tested separately.
 contract MockSP1 is ISP1Verifier {
@@ -32,7 +32,7 @@ contract MoonlinkTest is Test {
         aggs[0].bits = j.readUintArray(".bits0");
         slot = uint64(j.readUint(".slot"));
         blockId = j.readBytes32(".blockId");
-        ml = new Moonlink(uint16(j.readUint(".sv")), 200, slot / 200, pks, stakes, new MockSP1(), bytes32(uint256(1)), DEPOSIT_PROGRAM, bytes32(uint256(2)));
+        ml = new Moonlink(uint16(j.readUint(".sv")), 200, false, slot / 200, setHashOf(pks, stakes), totalStakeOf(stakes), new MockSP1(), bytes32(uint256(1)), DEPOSIT_PROGRAM, bytes32(uint256(2)));
     }
 
     function pv(uint64 s, bytes32 bid, bytes32 prog, address to, uint64 amount, uint64 nonce) internal pure returns (bytes memory) {

@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Test, console} from "forge-std/Test.sol";
 import {stdJson} from "forge-std/StdJson.sol";
-import {MoonlinkLightClient} from "../src/MoonlinkLightClient.sol";
+import {MoonlinkLightClient, setHashOf, totalStakeOf} from "../src/MoonlinkLightClient.sol";
 import {AlpenglowBLS} from "../src/AlpenglowBLS.sol";
 
 contract BLSHarness {
@@ -38,7 +38,7 @@ contract LightClientTest is Test {
     }
 
     function deploy(Fx memory f) internal returns (MoonlinkLightClient lc) {
-        lc = new MoonlinkLightClient(f.sv, f.spe, f.epoch, f.pks, f.stakes);
+        lc = new MoonlinkLightClient(f.sv, f.spe, false, f.epoch, setHashOf(f.pks, f.stakes), totalStakeOf(f.stakes));
     }
 
     function test_hashToCurveMatchesPyEcc() public {
